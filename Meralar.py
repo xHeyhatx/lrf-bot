@@ -1,6 +1,6 @@
 import telebot
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from telebot import types
 import os
 from flask import Flask
@@ -14,15 +14,17 @@ def home():
     return "Kanka bot arkada uyanık ve çalışıyor! 🎣"
 
 def run_flask():
-    # Render portu otomatik ayarlar, bulamazsa 10000 portunu açar
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
 # --- AYARLAR VE ANAHTARLAR ---
 BOT_TOKEN = "8782001717:AAGzW-zFPRsM2tVF3Noeasdw6LIuxzCX54E"  
-WEATHER_API_KEY = "f9697357bf7366489a07264fdbf6ed55"  
+WEATHER_API_KEY = "f9697357bf7366489a07264fdbf6ed55"   
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# İstanbul sabit olarak UTC+3 zaman dilimindedir
+ISTANBUL_TZ = timezone(timedelta(hours=3))
 
 # --- SADECE AVRUPA YAKASI LRF MERALARI ---
 MERALAR = {
@@ -44,20 +46,27 @@ def hava_durumu_al(lat, lon):
     return response
 
 def lrf_hedef_analizi(wind_speed, zemin):
-    current_hour = datetime.now().hour
+    """İstanbul saatine göre İstavrit, Mırmır ve Eşkina skorları üretir."""
+    # Sunucu nerede olursa olsun İstanbul'un anlık saatini çekiyoruz
+    current_hour = datetime.now(ISTANBUL_TZ).hour
+    
+    # Saat 20:00 ile 05:00 arası gece kabul edilir.
     is_night = current_hour >= 20 or current_hour <= 5
     
+    # --- 1. İSTAVRİT ANALİZİ ---
     istavrit_skor = 75
     if wind_speed > 18: istavrit_skor -= 25
     if wind_speed < 10: istavrit_skor += 15
     istavrit_taktik = "💡 Pembe, beyaz veya simli ince silikonlar (iskele altı ışık alan yerlere atış yap)." if is_night else "💡 Gündüz avı için ufak mikro jigler (3-5 gr) veya koyu renkli silikonları dipten dene."
     
+    # --- 2. MIRMIR ANALİZİ ---
     mirmir_skor = 40
     if is_night: mirmir_skor += 35
     if zemin in ["kumluk", "kumluk_taslik"]: mirmir_skor += 20
     if wind_speed > 15: mirmir_skor -= 30
     mirmir_taktik = "💡 Kokulu kurtlar (Isome/Berkley) ile dipte yavaşça tırnaklama/sürütme aksiyonu yap."
 
+    # --- 3. EŞKİNA ANALİZİ ---
     eskina_skor = 20
     if is_night: eskina_skor += 55
     if zemin in ["iri_taslik", "taslik_derin"]: eskina_skor += 25
@@ -69,6 +78,8 @@ def lrf_hedef_analizi(wind_speed, zemin):
     eskina_skor = max(10, min(100, eskina_skor))
 
     return {
+        "is_night": is_night,
+        "hour_str": datetime.now(ISTANBUL_TZ).strftime("%H:%M"),
         "istavrit": {"skor": istavrit_skor, "taktik": istavrit_taktik},
         "mirmir": {"skor": mirmir_skor, "taktik": mirmir_taktik},
         "eskina": {"skor": eskina_skor, "taktik": eskina_taktik}
@@ -77,7 +88,7 @@ def lrf_hedef_analizi(wind_speed, zemin):
 @bot.message_handler(commands=['start', 'help'])
 def hosgeldin(message):
     text = (
-        "Selam kanka! Avrupa Yakası LRF İstihbarat Botu devrede. 🎣\n\n"
+        "Selam kanka! İstanbul saatine tam uyumlu LRF İstihbarat Botu devrede. 🎣\n\n"
         "Gideceğin merayı seç; hava durumunu, hedef balıkların şansını analiz edeyim "
         "ve hemen altına tam avlanacağın yerin harita konumunu fırlatayım."
     )
@@ -91,7 +102,7 @@ def rapor_ver(message):
     mera_adi = message.text
     mera = MERALAR[mera_adi]
     
-    bot.send_message(message.chat.id, f"🔄 {mera_adi} inceleniyor, rapor ve konum hazırlanıyor...")
+    bot.send_message(message.chat.id, f"🔄 {mera_adi} inceleniyor, anlık veriler çekiliyor...")
     
     hava = hava_durumu_al(mera["lat"], mera["lon"])
     if not hava:
@@ -104,11 +115,15 @@ def rapor_ver(message):
     
     analiz = lrf_hedef_analizi(wind_speed, mera["zemin"])
     
-    is_weekend = datetime.now().weekday() in [5, 6]
+    # Mod göstergesi (Gece / Gündüz)
+    mod_metni = "🌙 Gece Avı Modu" if analiz["is_night"] else "☀️ Gündüz Avı Modu"
+    
+    is_weekend = datetime.now(ISTANBUL_TZ).weekday() in [5, 6]
     kalabalik = "🔴 Hafta sonu yoğunluğu olabilir" if (is_weekend and wind_speed < 12) else "🟢 Sakin / Rahat atış alanı"
 
     rapor_metni = (
         f"📍 *MERA:* {mera_adi}\n"
+        f"⏰ *Rapor Saati:* {analiz['hour_str']} ({mod_metni})\n"
         f"🌡️ *Hava:* {temp}°C | {desc}\n"
         f"💨 *Anlık Rüzgâr:* {wind_speed} km/s\n"
         f"👥 *Tahmini Durum:* {kalabalik}\n"
@@ -126,9 +141,7 @@ def rapor_ver(message):
     bot.send_message(message.chat.id, rapor_metni, parse_mode="Markdown")
     bot.send_location(message.chat.id, mera["lat"], mera["lon"])
 
-# --- ANA ÇALIŞTIRMA ---
 if __name__ == "__main__":
-    # Web sunucusunu ayrı bir kolda (thread) başlatıyoruz
     threading.Thread(target=run_flask).start()
-    print("Avrupa Yakası LRF Botu + Web Server Çalışıyor...")
+    print("Zaman Ayarlı Avrupa Yakası LRF Botu Çalışıyor...")
     bot.infinity_polling()
