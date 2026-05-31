@@ -29,7 +29,7 @@ ISTANBUL_TZ = timezone(timedelta(hours=3))
 # --- SADECE AVRUPA YAKASI LRF MERALARI ---
 MERALAR = {
     "Büyükçekmece Sahil": {"lat": 41.0225, "lon": 28.5812, "zemin": "kumluk_taslik"},
-    "Avcılar Ambarlı": {"lat": 40.9695, "lon": 28.6970, "zemin": "taslik_derin"},
+    "Avcılar Ambarlı": {"lat": 40.969489, "lon": 28.725667, "zemin": "taslik_derin"},
     "Yeşilköy Sahil": {"lat": 40.9575, "lon": 28.8250, "zemin": "kumluk_taslik"},
     "Yenikapı Mermerler": {"lat": 41.0010, "lon": 28.9530, "zemin": "iri_taslik"},
     "Eminönü İskele": {"lat": 41.0185, "lon": 28.9740, "zemin": "derin_akinti"},
